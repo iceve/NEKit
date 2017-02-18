@@ -1,10 +1,10 @@
 import Foundation
 
 /// The rule matches the request which failed to look up.
-public class DNSFailRule: Rule {
-    private let adapterFactory: AdapterFactory
+open class DNSFailRule: Rule {
+    fileprivate let adapterFactory: AdapterFactory
 
-    public override var description: String {
+    open override var description: String {
         return "<DNSFailRule>"
     }
 
@@ -26,32 +26,32 @@ public class DNSFailRule: Rule {
 
      - returns: The result of match.
      */
-    override func matchDNS(session: DNSSession, type: DNSSessionMatchType) -> DNSSessionMatchResult {
-        guard type == .IP else {
-            return .Unknown
+    override open func matchDNS(_ session: DNSSession, type: DNSSessionMatchType) -> DNSSessionMatchResult {
+        guard type == .ip else {
+            return .unknown
         }
 
         // only return real IP when we connect to remote directly
         if session.realIP == nil {
             if let _ = adapterFactory as? DirectAdapterFactory {
-                return .Real
+                return .real
             } else {
-                return .Fake
+                return .fake
             }
         } else {
-            return .Pass
+            return .pass
         }
     }
 
     /**
-     Match connect request to this rule.
+     Match connect session to this rule.
 
-     - parameter request: Connect request to match.
+     - parameter session: connect session to match.
 
      - returns: The configured adapter.
      */
-    override func match(request: ConnectRequest) -> AdapterFactory? {
-        if request.ipAddress == "" {
+    override open func match(_ session: ConnectSession) -> AdapterFactory? {
+        if session.ipAddress == "" {
             return adapterFactory
         } else {
             return nil

@@ -2,27 +2,24 @@ import Foundation
 
 /// The raw socket protocol which represents a TCP socket.
 ///
-/// Any concrete implemention does not need to be thread-safe.
+/// Any concrete implementation does not need to be thread-safe.
 ///
-/// - warning: It is expected that the instance is accessed on the `queue` only.
+/// - warning: It is expected that the instance is accessed on the specific queue only.
 public protocol RawTCPSocketProtocol : class {
     /// The `RawTCPSocketDelegate` instance.
     weak var delegate: RawTCPSocketDelegate? { get set }
-
-    /// Every delegate method should be called on this dispatch queue. And every method call and variable access will be called on this queue.
-    var queue: dispatch_queue_t! { get set }
 
     /// If the socket is connected.
     var isConnected: Bool { get }
 
     /// The source address.
-    var sourceIPAddress: IPv4Address? { get }
+    var sourceIPAddress: IPAddress? { get }
 
     /// The source port.
     var sourcePort: Port? { get }
 
     /// The destination address.
-    var destinationIPAddress: IPv4Address? { get }
+    var destinationIPAddress: IPAddress? { get }
 
     /// The destination port.
     var destinationPort: Port? { get }
@@ -37,14 +34,14 @@ public protocol RawTCPSocketProtocol : class {
 
      - throws: The error occured when connecting to host.
      */
-    func connectTo(host: String, port: Int, enableTLS: Bool, tlsSettings: [NSObject : AnyObject]?) throws
+    func connectTo(host: String, port: Int, enableTLS: Bool, tlsSettings: [AnyHashable: Any]?) throws
 
     /**
      Disconnect the socket.
 
      The socket should disconnect elegantly after any queued writing data are successfully sent.
 
-     - note: Usually, any concrete implemention should wait until any pending writing data are finished then call `forceDisconnect()`.
+     - note: Usually, any concrete implementation should wait until any pending writing data are finished then call `forceDisconnect()`.
      */
     func disconnect()
 
@@ -59,46 +56,41 @@ public protocol RawTCPSocketProtocol : class {
      Send data to remote.
 
      - parameter data: Data to send.
-     - parameter tag:  The tag identifying the data in the callback delegate method.
      - warning: This should only be called after the last write is finished, i.e., `delegate?.didWriteData()` is called.
      */
-    func writeData(data: NSData, withTag: Int)
+    func write(data: Data)
 
     /**
      Read data from the socket.
 
-     - parameter tag: The tag identifying the data in the callback delegate method.
      - warning: This should only be called after the last read is finished, i.e., `delegate?.didReadData()` is called.
      */
-    func readDataWithTag(tag: Int)
+    func readData()
 
     /**
      Read specific length of data from the socket.
 
      - parameter length: The length of the data to read.
-     - parameter tag:    The tag identifying the data in the callback delegate method.
      - warning: This should only be called after the last read is finished, i.e., `delegate?.didReadData()` is called.
      */
-    func readDataToLength(length: Int, withTag tag: Int)
+    func readDataTo(length: Int)
 
     /**
      Read data until a specific pattern (including the pattern).
 
      - parameter data: The pattern.
-     - parameter tag:  The tag identifying the data in the callback delegate method.
      - warning: This should only be called after the last read is finished, i.e., `delegate?.didReadData()` is called.
      */
-    func readDataToData(data: NSData, withTag tag: Int)
+    func readDataTo(data: Data)
 
     /**
      Read data until a specific pattern (including the pattern).
 
      - parameter data: The pattern.
-     - parameter tag:  The tag identifying the data in the callback delegate method.
      - parameter maxLength: The max length of data to scan for the pattern.
      - warning: This should only be called after the last read is finished, i.e., `delegate?.didReadData()` is called.
      */
-    func readDataToData(data: NSData, withTag tag: Int, maxLength: Int)
+    func readDataTo(data: Data, maxLength: Int)
 }
 
 /// The delegate protocol to handle the events from a raw TCP socket.
@@ -110,30 +102,28 @@ public protocol RawTCPSocketDelegate: class {
 
      - parameter socket: The socket which did disconnect.
      */
-    func didDisconnect(socket: RawTCPSocketProtocol)
+    func didDisconnectWith(socket: RawTCPSocketProtocol)
 
     /**
      The socket did read some data.
 
      - parameter data:    The data read from the socket.
-     - parameter withTag: The tag given when calling the `readData` method.
      - parameter from:    The socket where the data is read from.
      */
-    func didReadData(data: NSData, withTag: Int, from: RawTCPSocketProtocol)
+    func didRead(data: Data, from: RawTCPSocketProtocol)
 
     /**
      The socket did send some data.
 
      - parameter data:    The data which have been sent to remote (acknowledged). Note this may not be available since the data may be released to save memory.
-     - parameter withTag: The tag given when calling the `writeData` method.
-     - parameter from:    The socket where the data is sent out.
+     - parameter by:      The socket where the data is sent out.
      */
-    func didWriteData(data: NSData?, withTag: Int, from: RawTCPSocketProtocol)
+    func didWrite(data: Data?, by: RawTCPSocketProtocol)
 
     /**
      The socket did connect to remote.
 
      - parameter socket: The connected socket.
      */
-    func didConnect(socket: RawTCPSocketProtocol)
+    func didConnectWith(socket: RawTCPSocketProtocol)
 }

@@ -1,27 +1,33 @@
 import Foundation
 
-public class HTTPHeader {
-    public var HTTPVersion: String
-    public var method: String
-    public var isConnect: Bool = false
-    public var path: String
-    public var host: String
-    public var port: Int
+open class HTTPHeader {
+    public enum HTTPHeaderError: Error {
+        case malformedHeader, invalidRequestLine, invalidHeaderField, invalidConnectURL, invalidConnectPort, invalidURL, missingHostField, invalidHostField, invalidHostPort, invalidContentLength, illegalEncoding
+    }
+    
+    open var HTTPVersion: String
+    open var method: String
+    open var isConnect: Bool = false
+    open var path: String
+    open var foundationURL: Foundation.URL?
+    open var homemadeURL: HTTPURL?
+    open var host: String
+    open var port: Int
     // just assume that `Content-Length` is given as of now.
     // Chunk is not supported yet.
-    public var contentLength: Int = 0
-    public var headers: [(String, String)] = []
-    public var rawHeader: NSData?
+    open var contentLength: Int = 0
+    open var headers: [(String, String)] = []
+    open var rawHeader: Data?
 
-    public init?(headerString: String) {
-        let lines = headerString.componentsSeparatedByString("\r\n")
+    public init(headerString: String) throws {
+        let lines = headerString.components(separatedBy: "\r\n")
         guard lines.count >= 3 else {
-            return nil
+            throw HTTPHeaderError.malformedHeader
         }
 
-        let request = lines[0].componentsSeparatedByString(" ")
+        let request = lines[0].components(separatedBy: " ")
         guard request.count == 3 else {
-            return nil
+            throw HTTPHeaderError.invalidRequestLine
         }
 
         method = request[0]
@@ -29,58 +35,84 @@ public class HTTPHeader {
         HTTPVersion = request[2]
 
         for line in lines[1..<lines.count-2] {
-            let header = line.componentsSeparatedByString(": ")
+            let header = line.characters.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
             guard header.count == 2 else {
-                return nil
+                throw HTTPHeaderError.invalidHeaderField
             }
-            headers.append(header[0].stringByTrimmingCharactersInSet(NSCharacterSet.whitespaceCharacterSet()), header[1].stringByTrimmingCharactersInSet(NSCharacterSet.whitespaceCharacterSet()))
+            headers.append((String(header[0]).trimmingCharacters(in: CharacterSet.whitespaces), String(header[1]).trimmingCharacters(in: CharacterSet.whitespaces)))
         }
 
-        if method.uppercaseString == "CONNECT" {
+        if method.uppercased() == "CONNECT" {
             isConnect = true
 
-            let urlInfo = path.componentsSeparatedByString(":")
+            let urlInfo = path.components(separatedBy: ":")
             guard urlInfo.count == 2 else {
-                return nil
+                throw HTTPHeaderError.invalidConnectURL
             }
             host = urlInfo[0]
             guard let port = Int(urlInfo[1]) else {
-                return nil
+                throw HTTPHeaderError.invalidConnectPort
             }
             self.port = port
 
             self.contentLength = 0
         } else {
-            var url: String = ""
-            for (key, value) in headers {
-                if "Host".caseInsensitiveCompare(key) == .OrderedSame {
-                    url = value
-                    break
-                }
-            }
-            guard url != "" else {
-                return nil
-            }
+            var resolved = false
 
-            let urlInfo = url.componentsSeparatedByString(":")
-            guard urlInfo.count <= 2 else {
-                return nil
-            }
-            if urlInfo.count == 2 {
-                host = urlInfo[0]
-                guard let port = Int(urlInfo[1]) else {
-                    return nil
+            host = ""
+            port = 80
+
+            if let _url = Foundation.URL(string: path) {
+                foundationURL = _url
+                if foundationURL!.host != nil {
+                    host = foundationURL!.host!
+                    port = foundationURL!.port ?? 80
+                    resolved = true
                 }
-                self.port = port
             } else {
-                host = urlInfo[0]
-                port = 80
+                guard let _url = HTTPURL(string: path) else {
+                    throw HTTPHeaderError.invalidURL
+                }
+                homemadeURL = _url
+                if homemadeURL!.host != nil {
+                    host = homemadeURL!.host!
+                    port = homemadeURL!.port ?? 80
+                    resolved = true
+                }
+            }
+
+            if !resolved {
+                var url: String = ""
+                for (key, value) in headers {
+                    if "Host".caseInsensitiveCompare(key) == .orderedSame {
+                        url = value
+                        break
+                    }
+                }
+                guard url != "" else {
+                    throw HTTPHeaderError.missingHostField
+                }
+
+                let urlInfo = url.components(separatedBy: ":")
+                guard urlInfo.count <= 2 else {
+                    throw HTTPHeaderError.invalidHostField
+                }
+                if urlInfo.count == 2 {
+                    host = urlInfo[0]
+                    guard let port = Int(urlInfo[1]) else {
+                        throw HTTPHeaderError.invalidHostPort
+                    }
+                    self.port = port
+                } else {
+                    host = urlInfo[0]
+                    port = 80
+                }
             }
 
             for (key, value) in headers {
-                if "Content-Length".caseInsensitiveCompare(key) == .OrderedSame {
+                if "Content-Length".caseInsensitiveCompare(key) == .orderedSame {
                     guard let contentLength = Int(value) else {
-                        return nil
+                        throw HTTPHeaderError.invalidContentLength
                     }
                     self.contentLength = contentLength
                     break
@@ -89,19 +121,19 @@ public class HTTPHeader {
         }
     }
 
-    public convenience init?(headerData: NSData) {
-        guard let headerString = NSString(data: headerData, encoding: NSASCIIStringEncoding) as? String else {
-            return nil
+    public convenience init(headerData: Data) throws {
+        guard let headerString = String(data: headerData, encoding: .utf8) else {
+            throw HTTPHeaderError.illegalEncoding
         }
 
-        self.init(headerString: headerString)
+        try self.init(headerString: headerString)
         rawHeader = headerData
     }
 
-    public subscript(index: String) -> String? {
+    open subscript(index: String) -> String? {
         get {
             for (key, value) in headers {
-                if index.caseInsensitiveCompare(key) == .OrderedSame {
+                if index.caseInsensitiveCompare(key) == .orderedSame {
                     return value
                 }
             }
@@ -109,12 +141,11 @@ public class HTTPHeader {
         }
     }
 
-
-    public func toData() -> NSData {
-        return toString().dataUsingEncoding(NSUTF8StringEncoding)!
+    open func toData() -> Data {
+        return toString().data(using: String.Encoding.utf8)!
     }
 
-    public func toString() -> String {
+    open func toString() -> String {
         var strRep = "\(method) \(path) \(HTTPVersion)\r\n"
         for (key, value) in headers {
             strRep += "\(key): \(value)\r\n"
@@ -123,11 +154,11 @@ public class HTTPHeader {
         return strRep
     }
 
-    public func addHeader(key: String, value: String) {
+    open func addHeader(_ key: String, value: String) {
         headers.append(key, value)
     }
 
-    public func rewriteToRelativePath() {
+    open func rewriteToRelativePath() {
         if path[path.startIndex] != "/" {
             guard let rewrotePath = URL.matchRelativePath(path) else {
                 return
@@ -136,31 +167,31 @@ public class HTTPHeader {
         }
     }
 
-    public func removeHeader(key: String) -> String? {
+    open func removeHeader(_ key: String) -> String? {
         for i in 0..<headers.count {
-            if headers[i].0.caseInsensitiveCompare(key) == .OrderedSame {
-                let (_, value) = headers.removeAtIndex(i)
+            if headers[i].0.caseInsensitiveCompare(key) == .orderedSame {
+                let (_, value) = headers.remove(at: i)
                 return value
             }
         }
         return nil
     }
 
-    public func removeProxyHeader() {
+    open func removeProxyHeader() {
         let ProxyHeader = ["Proxy-Authenticate", "Proxy-Authorization", "Proxy-Connection"]
         for header in ProxyHeader {
-            removeHeader(header)
+            _ = removeHeader(header)
         }
     }
 
     struct URL {
         // swiftlint:disable:next force_try
-        static let relativePathRegex = try! NSRegularExpression(pattern: "http.?:\\/\\/.*?(\\/.*)", options: NSRegularExpressionOptions.CaseInsensitive)
+        static let relativePathRegex = try! NSRegularExpression(pattern: "http.?:\\/\\/.*?(\\/.*)", options: NSRegularExpression.Options.caseInsensitive)
 
-        static func matchRelativePath(url: String) -> String? {
-            if let result = relativePathRegex.firstMatchInString(url, options: NSMatchingOptions(), range: NSRange(location: 0, length: url.characters.count)) {
+        static func matchRelativePath(_ url: String) -> String? {
+            if let result = relativePathRegex.firstMatch(in: url, options: NSRegularExpression.MatchingOptions(), range: NSRange(location: 0, length: url.characters.count)) {
 
-                return (url as NSString).substringWithRange(result.rangeAtIndex(1))
+                return (url as NSString).substring(with: result.rangeAt(1))
             } else {
                 return nil
             }

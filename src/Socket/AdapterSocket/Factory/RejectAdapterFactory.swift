@@ -1,13 +1,13 @@
 import Foundation
 
-public class RejectAdapterFactory: AdapterFactory {
-    public let delay: Int
+open class RejectAdapterFactory: AdapterFactory {
+    open let delay: Int
 
     public init(delay: Int = Opt.RejectAdapterDefaultDelay) {
         self.delay = delay
     }
 
-    override func getAdapter(request: ConnectRequest) -> AdapterSocket {
+    override func getAdapterFor(session: ConnectSession) -> AdapterSocket {
         return RejectAdapter(delay: delay)
     }
 }

@@ -1,21 +1,21 @@
 import Foundation
 
 /// Factory building speed adapter.
-public class SpeedAdapterFactory: AdapterFactory {
-    public var adapterFactories: [(AdapterFactory, Int)]!
+open class SpeedAdapterFactory: AdapterFactory {
+    open var adapterFactories: [(AdapterFactory, Int)]!
 
     public override init() {}
 
     /**
      Get a speed adapter.
 
-     - parameter request: The connect request.
+     - parameter session: The connect session.
 
      - returns: The built adapter.
      */
-    override func getAdapter(request: ConnectRequest) -> AdapterSocket {
+    override func getAdapterFor(session: ConnectSession) -> AdapterSocket {
         let adapters = adapterFactories.map { adapterFactory, delay -> (AdapterSocket, Int) in
-            let adapter = adapterFactory.getAdapter(request)
+            let adapter = adapterFactory.getAdapterFor(session: session)
             adapter.socket = RawSocketFactory.getRawSocket()
             return (adapter, delay)
         }

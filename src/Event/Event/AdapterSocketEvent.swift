@@ -3,38 +3,38 @@ import Foundation
 public enum AdapterSocketEvent: EventType {
     public var description: String {
         switch self {
-        case let .SocketOpened(socket, withRequest: request):
-            return "Adatper socket \(socket) starts to connect to remote with request \(request)."
-        case .DisconnectCalled(let socket):
+        case let .socketOpened(socket, withSession: session):
+            return "Adatper socket \(socket) starts to connect to remote with session \(session)."
+        case .disconnectCalled(let socket):
             return "Disconnect is just called on adapter socket \(socket)."
-        case .ForceDisconnectCalled(let socket):
+        case .forceDisconnectCalled(let socket):
             return "Force disconnect is just called on adapter socket \(socket)."
-        case .Disconnected(let socket):
+        case .disconnected(let socket):
             return "Adapter socket \(socket) disconnected."
-        case let .ReadData(data, tag: tag, on: socket):
-            return "Received \(data.length) bytes data with tag \(tag) on adatper socket \(socket)."
-        case let .WroteData(data, tag: tag, on: socket):
+        case let .readData(data, on: socket):
+            return "Received \(data.count) bytes data on adatper socket \(socket)."
+        case let .wroteData(data, on: socket):
             if let data = data {
-                return "Sent \(data.length) bytes data with tag \(tag) on adapter socket \(socket)."
+                return "Sent \(data.count) bytes data on adapter socket \(socket)."
             } else {
-                return "Sent data with tag \(tag) on adapter socket \(socket)."
+                return "Sent data on adapter socket \(socket)."
             }
-        case let .Connected(socket, withResponse: response):
-            return "Adapter socket \(socket) connected to remote with response \(response)."
-        case .ReadyForForward(let socket):
+        case let .connected(socket):
+            return "Adapter socket \(socket) connected to remote."
+        case .readyForForward(let socket):
             return "Adatper socket \(socket) is ready to forward data."
-        case let .ErrorOccured(error, on: socket):
+        case let .errorOccured(error, on: socket):
             return "Adapter socket \(socket) encountered an error \(error)."
         }
     }
 
-    case SocketOpened(AdapterSocket, withRequest: ConnectRequest),
-    DisconnectCalled(AdapterSocket),
-    ForceDisconnectCalled(AdapterSocket),
-    Disconnected(AdapterSocket),
-    ReadData(NSData, tag: Int, on: AdapterSocket),
-    WroteData(NSData?, tag: Int, on: AdapterSocket),
-    Connected(AdapterSocket, withResponse: ConnectResponse),
-    ReadyForForward(AdapterSocket),
-    ErrorOccured(ErrorType, on: AdapterSocket)
+    case socketOpened(AdapterSocket, withSession: ConnectSession),
+    disconnectCalled(AdapterSocket),
+    forceDisconnectCalled(AdapterSocket),
+    disconnected(AdapterSocket),
+    readData(Data, on: AdapterSocket),
+    wroteData(Data?, on: AdapterSocket),
+    connected(AdapterSocket),
+    readyForForward(AdapterSocket),
+    errorOccured(Error, on: AdapterSocket)
 }

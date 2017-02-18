@@ -3,14 +3,14 @@ import Foundation
 public enum RuleMatchEvent: EventType {
     public var description: String {
         switch self {
-        case let .RuleMatched(request, rule: rule):
-            return "Rule \(rule) matched request \(request)."
-        case let .RuleDidNotMatch(request, rule: rule):
-            return "Rule \(rule) did not match request \(request)."
-        case let .DNSRuleMatched(session, rule: rule, type: type, result: result):
+        case let .ruleMatched(session, rule: rule):
+            return "Rule \(rule) matched session \(session)."
+        case let .ruleDidNotMatch(session, rule: rule):
+            return "Rule \(rule) did not match session \(session)."
+        case let .dnsRuleMatched(session, rule: rule, type: type, result: result):
             return "Rule \(rule) matched DNS session \(session) of type \(type), the result is \(result)."
         }
     }
 
-    case RuleMatched(ConnectRequest, rule: Rule), RuleDidNotMatch(ConnectRequest, rule: Rule), DNSRuleMatched(DNSSession, rule: Rule, type: DNSSessionMatchType, result: DNSSessionMatchResult)
+    case ruleMatched(ConnectSession, rule: Rule), ruleDidNotMatch(ConnectSession, rule: Rule), dnsRuleMatched(DNSSession, rule: Rule, type: DNSSessionMatchType, result: DNSSessionMatchResult)
 }

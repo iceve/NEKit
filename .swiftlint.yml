@@ -2,6 +2,8 @@ disabled_rules:
 - line_length
 - type_name
 - variable_name
+- cyclomatic_complexity
+- nesting
 excluded:
   - Carthage
   - tun2socks

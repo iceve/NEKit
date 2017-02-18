@@ -8,7 +8,7 @@ public final class GCDSOCKS5ProxyServer: GCDProxyServer {
      - parameter address: The address of proxy server.
      - parameter port:    The port of proxy server.
      */
-    override public init(address: IPv4Address?, port: Port) {
+    override public init(address: IPAddress?, port: Port) {
         super.init(address: address, port: port)
     }
 
@@ -17,7 +17,7 @@ public final class GCDSOCKS5ProxyServer: GCDProxyServer {
 
      - parameter socket: The accepted socket.
      */
-    override func handleNewGCDSocket(socket: GCDTCPSocket) {
+    override func handleNewGCDSocket(_ socket: GCDTCPSocket) {
         let proxySocket = SOCKS5ProxySocket(socket: socket)
         didAcceptNewSocket(proxySocket)
     }

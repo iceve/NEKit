@@ -1,38 +1,49 @@
 import Foundation
 
 public class RejectAdapter: AdapterSocket {
-    public let delay: Int
+    open let delay: Int
 
     public init(delay: Int) {
         self.delay = delay
     }
 
-    override func openSocketWithRequest(request: ConnectRequest) {
-        super.openSocketWithRequest(request)
+    override func openSocketWith(session: ConnectSession) {
+        super.openSocketWith(session: session)
 
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, Int64(NSEC_PER_MSEC) * Int64(delay)), queue) {
+        QueueFactory.getQueue().asyncAfter(deadline: DispatchTime.now() + DispatchTimeInterval.milliseconds(delay)) {
             [weak self] in
             self?.disconnect()
         }
     }
 
-
     /**
      Disconnect the socket elegantly.
      */
-    public override func disconnect() {
-        observer?.signal(.DisconnectCalled(self))
-        state = .Closed
-        delegate?.didDisconnect(self)
+    public override func disconnect(becauseOf error: Error? = nil) {
+        guard !isCancelled else {
+            return
+        }
+
+        _cancelled = true
+        session.disconnected(becauseOf: error, by: .adapter)
+        observer?.signal(.disconnectCalled(self))
+        _status = .closed
+        delegate?.didDisconnectWith(socket: self)
     }
 
     /**
      Disconnect the socket immediately.
      */
-    public override func forceDisconnect() {
-        observer?.signal(.ForceDisconnectCalled(self))
-        state = .Closed
-        delegate?.didDisconnect(self)
+    public override func forceDisconnect(becauseOf error: Error? = nil) {
+        guard !isCancelled else {
+            return
+        }
+
+        _cancelled = true
+        session.disconnected(becauseOf: error, by: .adapter)
+        observer?.signal(.forceDisconnectCalled(self))
+        _status = .closed
+        delegate?.didDisconnectWith(socket: self)
     }
 
 }

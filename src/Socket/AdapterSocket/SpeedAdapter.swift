@@ -1,64 +1,67 @@
 import Foundation
 
 /// This adpater selects the fastest proxy automatically from a set of proxies.
-// TODO: Event support
 public class SpeedAdapter: AdapterSocket, SocketDelegate {
     public var adapters: [(AdapterSocket, Int)]!
     var connectingCount = 0
     var pendingCount = 0
 
-    private var _shouldConnect: Bool = true
+    fileprivate var _shouldConnect: Bool = true
 
-    override public var queue: dispatch_queue_t! {
-        didSet {
-            for (adapter, _) in adapters {
-                adapter.queue = queue
-            }
+    override func openSocketWith(session: ConnectSession) {
+        for (adapter, _) in adapters {
+            adapter.observer = nil
         }
-    }
 
-    public override init() {
-        super.init()
-    }
+        super.openSocketWith(session: session)
 
-    override func openSocketWithRequest(request: ConnectRequest) {
+        // FIXME: This is a temporary workaround for wechat which uses a wrong way to detect ipv6 by itself.
+        if session.isIPv6() {
+            _cancelled = true
+            // Note `socket` is nil so `didDisconnectWith(socket:)` will never be called.
+            didDisconnectWith(socket: self)
+            return
+        }
+
         pendingCount = adapters.count
         for (adapter, delay) in adapters {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, Int64(NSEC_PER_MSEC) * Int64(delay)), queue) {
+            QueueFactory.getQueue().asyncAfter(deadline: DispatchTime.now() + DispatchTimeInterval.milliseconds(delay)) {
                 if self._shouldConnect {
                     adapter.delegate = self
-                    adapter.openSocketWithRequest(request)
+                    adapter.openSocketWith(session: session)
                     self.connectingCount += 1
                 }
             }
         }
     }
 
-    override public func disconnect() {
+    override public func disconnect(becauseOf error: Error? = nil) {
+        super.disconnect(becauseOf: error)
+
         _shouldConnect = false
         pendingCount = 0
         for (adapter, _) in adapters {
             adapter.delegate = nil
-            if adapter.state != .Invalid {
-                adapter.disconnect()
+            if adapter.status != .invalid {
+                adapter.disconnect(becauseOf: error)
             }
         }
     }
 
-    override public func forceDisconnect() {
+    override public func forceDisconnect(becauseOf error: Error? = nil) {
+        super.forceDisconnect(becauseOf: error)
+
         _shouldConnect = false
         pendingCount = 0
         for (adapter, _) in adapters {
             adapter.delegate = nil
-            if adapter.state != .Invalid {
-                adapter.forceDisconnect()
+            if adapter.status != .invalid {
+                adapter.forceDisconnect(becauseOf: error)
             }
         }
     }
 
-    public func didConnect(adapterSocket: AdapterSocket, withResponse response: ConnectResponse) {}
-
-    public func readyToForward(socket: SocketProtocol) {
+    public func didBecomeReadyToForwardWith(socket: SocketProtocol) {
         guard let adapterSocket = socket as? AdapterSocket else {
             return
         }
@@ -69,29 +72,34 @@ public class SpeedAdapter: AdapterSocket, SocketDelegate {
         for (adapter, _) in adapters {
             if adapter != adapterSocket {
                 adapter.delegate = nil
-                if adapter.state != .Invalid {
+                if adapter.status != .invalid {
                     adapter.forceDisconnect()
                 }
             }
         }
 
-        delegate?.updateAdapter(adapterSocket)
-        delegate?.didConnect(adapterSocket, withResponse: adapterSocket.response)
-        delegate?.readyToForward(adapterSocket)
+        delegate?.updateAdapterWith(newAdapter: adapterSocket)
+        adapterSocket.observer = observer
+        observer?.signal(.connected(adapterSocket))
+        delegate?.didConnectWith(adapterSocket: adapterSocket)
+        observer?.signal(.readyForForward(adapterSocket))
+        delegate?.didBecomeReadyToForwardWith(socket: adapterSocket)
         delegate = nil
     }
 
-    public func didDisconnect(socket: SocketProtocol) {
+    public func didDisconnectWith(socket: SocketProtocol) {
         connectingCount -= 1
-        if connectingCount == 0 && pendingCount == 0 {
+        if connectingCount <= 0 && pendingCount == 0 {
             // failed to connect
-            delegate?.didDisconnect(self)
+            _status = .closed
+            observer?.signal(.disconnected(self))
+            delegate?.didDisconnectWith(socket: self)
         }
     }
 
-
-    public func didWriteData(data: NSData?, withTag: Int, from: SocketProtocol) {}
-    public func didReadData(data: NSData, withTag: Int, from: SocketProtocol) {}
-    public func updateAdapter(newAdapter: AdapterSocket) {}
-    public func didReceiveRequest(request: ConnectRequest, from: ProxySocket) {}
+    public func didConnectWith(adapterSocket socket: AdapterSocket) {}
+    public func didWrite(data: Data?, by: SocketProtocol) {}
+    public func didRead(data: Data, from: SocketProtocol) {}
+    public func updateAdapterWith(newAdapter: AdapterSocket) {}
+    public func didReceive(session: ConnectSession, from: ProxySocket) {}
 }

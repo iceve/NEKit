@@ -2,25 +2,40 @@ import Foundation
 
 class HTTPStreamScanner {
     enum ReadAction {
-        case ReadHeader, ReadContent(Int), Stop
+        case readHeader, readContent(Int), stop
     }
-
-    var nextAction: ReadAction = .ReadHeader
-
+    
+    enum Result {
+        case header(HTTPHeader), content(Data)
+    }
+    
+    enum HTTPStreamScannerError: Error {
+        case contentIsTooLong, scannerIsStopped, unsupportedStreamType
+    }
+    
+    var nextAction: ReadAction = .readHeader
+    
     var remainContentLength: Int = 0
-
+    
     var currentHeader: HTTPHeader!
-
+    
     var isConnect: Bool = false
-
-    func input(data: NSData) -> (HTTPHeader?, NSData?) {
+    
+    func input(_ data: Data) throws -> Result {
         switch nextAction {
-        case .ReadHeader:
-            guard let header = HTTPHeader(headerData: data) else {
-                nextAction = .Stop
-                return (nil, nil)
+        case .readHeader:
+            let header: HTTPHeader
+            do {
+                header = try HTTPHeader(headerData: data)
+                // To temporarily solve a bug in firefox for mac
+                if currentHeader != nil && header.host != currentHeader.host {
+                    throw HTTPStreamScannerError.unsupportedStreamType
+                }
+            } catch let error {
+                nextAction = .stop
+                throw error
             }
-
+            
             if currentHeader == nil {
                 if header.isConnect {
                     isConnect = true
@@ -32,35 +47,35 @@ class HTTPStreamScanner {
             } else {
                 remainContentLength = header.contentLength
             }
-
+            
             currentHeader = header
-
+            
             setNextAction()
-
-            return (header, nil)
-        case .ReadContent:
-            remainContentLength -= data.length
+            
+            return .header(header)
+        case .readContent:
+            remainContentLength -= data.count
             if !isConnect && remainContentLength < 0 {
-                nextAction = .Stop
-                return (nil, nil)
+                nextAction = .stop
+                throw HTTPStreamScannerError.contentIsTooLong
             }
-
+            
             setNextAction()
-
-            return (nil, data)
-        case .Stop:
-            return (nil, nil)
+            
+            return .content(data)
+        case .stop:
+            throw HTTPStreamScannerError.scannerIsStopped
         }
     }
-
-    private func setNextAction() {
+    
+    fileprivate func setNextAction() {
         switch remainContentLength {
         case 0:
-            nextAction = .ReadHeader
-        case -1:
-            nextAction = .ReadContent(-1)
+            nextAction = .readHeader
+        case _ where remainContentLength < 0:
+            nextAction = .readContent(-1)
         default:
-            nextAction = .ReadContent(min(remainContentLength, Opt.MAXHTTPContentBlockLength))
+            nextAction = .readContent(min(remainContentLength, Opt.MAXHTTPContentBlockLength))
         }
     }
 }

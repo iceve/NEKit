@@ -1,16 +1,16 @@
 import Foundation
 
 /// The class managing rules.
-public class RuleManager {
+open class RuleManager {
     /// The current used `RuleManager`, there is only one manager should be used at a time.
     ///
-    /// - note: This should be set before any DNS or connect requests.
-    public static var currentManager: RuleManager = RuleManager(fromRules: [], appendDirect: true)
+    /// - note: This should be set before any DNS or connect sessions.
+    open static var currentManager: RuleManager = RuleManager(fromRules: [], appendDirect: true)
 
     /// The rule list.
     var rules: [Rule] = []
 
-    public var observer: Observer<RuleMatchEvent>?
+    open var observer: Observer<RuleMatchEvent>?
 
     /**
      Create a new `RuleManager` from the given rules.
@@ -34,45 +34,45 @@ public class RuleManager {
      - parameter session: The DNS session to match.
      - parameter type:    What kind of information is available.
      */
-    func matchDNS(session: DNSSession, type: DNSSessionMatchType) {
-        for (i, rule) in rules[session.indexToMatch..<rules.count].enumerate() {
+    func matchDNS(_ session: DNSSession, type: DNSSessionMatchType) {
+        for (i, rule) in rules[session.indexToMatch..<rules.count].enumerated() {
             let result = rule.matchDNS(session, type: type)
 
-            observer?.signal(.DNSRuleMatched(session, rule: rule, type: type, result: result))
+            observer?.signal(.dnsRuleMatched(session, rule: rule, type: type, result: result))
 
             switch result {
-            case .Fake, .Real, .Unknown:
+            case .fake, .real, .unknown:
                 session.matchedRule = rule
                 session.matchResult = result
                 session.indexToMatch = i + session.indexToMatch // add the offset
                 return
-            case .Pass:
+            case .pass:
                 break
             }
         }
     }
 
     /**
-     Match connect request to all rules.
+     Match connect session to all rules.
 
-     - parameter request: Connect request to match.
+     - parameter session: connect session to match.
 
      - returns: The matched configured adapter.
      */
-    func match(request: ConnectRequest) -> AdapterFactory! {
-        if request.matchedRule != nil {
-            observer?.signal(.RuleMatched(request, rule: request.matchedRule!))
-            return request.matchedRule!.match(request)
+    func match(_ session: ConnectSession) -> AdapterFactory! {
+        if session.matchedRule != nil {
+            observer?.signal(.ruleMatched(session, rule: session.matchedRule!))
+            return session.matchedRule!.match(session)
         }
 
         for rule in rules {
-            if let adapterFactory = rule.match(request) {
-                observer?.signal(.RuleMatched(request, rule: rule))
+            if let adapterFactory = rule.match(session) {
+                observer?.signal(.ruleMatched(session, rule: rule))
 
-                request.matchedRule = rule
+                session.matchedRule = rule
                 return adapterFactory
             } else {
-                observer?.signal(.RuleDidNotMatch(request, rule: rule))
+                observer?.signal(.ruleDidNotMatch(session, rule: rule))
             }
         }
         return nil // this should never happens

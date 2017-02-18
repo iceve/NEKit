@@ -4,37 +4,32 @@ import CocoaLumberjackSwift
 
 /// The TCP socket build upon `NWTCPConnection`.
 ///
-/// - warning: This class is not thread-safe, it is expected that the instance is accessed on the `queue` only.
+/// - warning: This class is not thread-safe.
 public class NWTCPSocket: NSObject, RawTCPSocketProtocol {
-    static let ScannerReadTag = 10000
-    private var connection: NWTCPConnection!
+    private var connection: NWTCPConnection?
 
     private var writePending = false
     private var closeAfterWriting = false
+    private var cancelled = false
 
     private var scanner: StreamScanner!
-    private var scannerTag: Int!
-    private var readDataPrefix: NSData?
+    private var scanning: Bool = false
+    private var readDataPrefix: Data?
 
-    // MARK: RawTCPSocketProtocol implemention
+    // MARK: RawTCPSocketProtocol implementation
 
     /// The `RawTCPSocketDelegate` instance.
-    weak public var delegate: RawTCPSocketDelegate?
-
-    /// Every method call and variable access must operated on this queue. And all delegate methods will be called on this queue.
-    ///
-    /// - warning: This should be set as soon as the instance is initialized.
-    public var queue: dispatch_queue_t!
+    weak open var delegate: RawTCPSocketDelegate?
 
     /// If the socket is connected.
     public var isConnected: Bool {
-        return connection.state == .Connected
+        return connection != nil && connection!.state == .connected
     }
 
     /// The source address.
     ///
     /// - note: Always returns `nil`.
-    public var sourceIPAddress: IPv4Address? {
+    public var sourceIPAddress: IPAddress? {
         return nil
     }
 
@@ -48,7 +43,7 @@ public class NWTCPSocket: NSObject, RawTCPSocketProtocol {
     /// The destination address.
     ///
     /// - note: Always returns `nil`.
-    public var destinationIPAddress: IPv4Address? {
+    public var destinationIPAddress: IPAddress? {
         return nil
     }
 
@@ -61,38 +56,40 @@ public class NWTCPSocket: NSObject, RawTCPSocketProtocol {
 
     /**
      Connect to remote host.
-
+     
      - parameter host:        Remote host.
      - parameter port:        Remote port.
      - parameter enableTLS:   Should TLS be enabled.
      - parameter tlsSettings: The settings of TLS.
-
+     
      - throws: Never throws.
      */
-    public func connectTo(host: String, port: Int, enableTLS: Bool, tlsSettings: [NSObject : AnyObject]?) throws {
+    public func connectTo(host: String, port: Int, enableTLS: Bool, tlsSettings: [AnyHashable: Any]?) throws {
         let endpoint = NWHostEndpoint(hostname: host, port: "\(port)")
         let tlsParameters = NWTLSParameters()
         if let tlsSettings = tlsSettings as? [String: AnyObject] {
-            tlsParameters.setValuesForKeysWithDictionary(tlsSettings)
+            tlsParameters.setValuesForKeys(tlsSettings)
         }
 
-        guard let connection = RawSocketFactory.TunnelProvider?.createTCPConnectionToEndpoint(endpoint, enableTLS: enableTLS, TLSParameters: tlsParameters, delegate: nil) else {
-            // This should only happen when the extension is already stoped and `RawSocketFactory.TunnelProvider` is set to `nil`.
+        guard let connection = RawSocketFactory.TunnelProvider?.createTCPConnection(to: endpoint, enableTLS: enableTLS, tlsParameters: tlsParameters, delegate: nil) else {
+            // This should only happen when the extension is already stopped and `RawSocketFactory.TunnelProvider` is set to `nil`.
             return
         }
 
         self.connection = connection
-        connection.addObserver(self, forKeyPath: "state", options: [.Initial, .New], context: nil)
+        connection.addObserver(self, forKeyPath: "state", options: [.initial, .new], context: nil)
     }
 
     /**
      Disconnect the socket.
-
+     
      The socket will disconnect elegantly after any queued writing data are successfully sent.
      */
     public func disconnect() {
-        if connection.state == .Cancelled {
-            delegate?.didDisconnect(self)
+        cancelled = true
+
+        if connection == nil  || connection!.state == .cancelled {
+            delegate?.didDisconnectWith(socket: self)
         } else {
             closeAfterWriting = true
             checkStatus()
@@ -103,8 +100,10 @@ public class NWTCPSocket: NSObject, RawTCPSocketProtocol {
      Disconnect the socket immediately.
      */
     public func forceDisconnect() {
-        if connection.state == .Cancelled {
-            delegate?.didDisconnect(self)
+        cancelled = true
+
+        if connection == nil  || connection!.state == .cancelled {
+            delegate?.didDisconnectWith(socket: self)
         } else {
             cancel()
         }
@@ -112,59 +111,80 @@ public class NWTCPSocket: NSObject, RawTCPSocketProtocol {
 
     /**
      Send data to remote.
-
+     
      - parameter data: Data to send.
-     - parameter tag:  The tag identifying the data in the callback delegate method.
      - warning: This should only be called after the last write is finished, i.e., `delegate?.didWriteData()` is called.
      */
-    public func writeData(data: NSData, withTag tag: Int) {
-        sendData(data, withTag: tag)
+    public func write(data: Data) {
+        guard !cancelled else {
+            return
+        }
+
+        guard data.count > 0 else {
+            QueueFactory.getQueue().async {
+                self.delegate?.didWrite(data: data, by: self)
+            }
+            return
+        }
+
+        send(data: data)
     }
 
     /**
      Read data from the socket.
-
-     - parameter tag: The tag identifying the data in the callback delegate method.
+     
      - warning: This should only be called after the last read is finished, i.e., `delegate?.didReadData()` is called.
      */
-    public func readDataWithTag(tag: Int) {
-        connection.readMinimumLength(0, maximumLength: Opt.MAXNWTCPSocketReadDataSize) { data, error in
+    public func readData() {
+        guard !cancelled else {
+            return
+        }
+
+        connection!.readMinimumLength(1, maximumLength: Opt.MAXNWTCPSocketReadDataSize) { data, error in
             guard error == nil else {
                 DDLogError("NWTCPSocket got an error when reading data: \(error)")
+                self.queueCall {
+                    self.disconnect()
+                }
                 return
             }
 
-            self.readCallback(data, tag: tag)
+            self.readCallback(data: data)
         }
     }
 
     /**
      Read specific length of data from the socket.
-
+     
      - parameter length: The length of the data to read.
-     - parameter tag:    The tag identifying the data in the callback delegate method.
      - warning: This should only be called after the last read is finished, i.e., `delegate?.didReadData()` is called.
      */
-    public func readDataToLength(length: Int, withTag tag: Int) {
-        connection.readLength(length) { data, error in
+    public func readDataTo(length: Int) {
+        guard !cancelled else {
+            return
+        }
+
+        connection!.readLength(length) { data, error in
             guard error == nil else {
                 DDLogError("NWTCPSocket got an error when reading data: \(error)")
+                self.queueCall {
+                    self.disconnect()
+                }
                 return
             }
 
-            self.readCallback(data, tag: tag)
+            self.readCallback(data: data)
         }
     }
 
     /**
      Read data until a specific pattern (including the pattern).
-
+     
      - parameter data: The pattern.
-     - parameter tag:  The tag identifying the data in the callback delegate method.
      - warning: This should only be called after the last read is finished, i.e., `delegate?.didReadData()` is called.
      */
-    public func readDataToData(data: NSData, withTag tag: Int) {
-        readDataToData(data, withTag: tag, maxLength: 0)
+    public func readDataTo(data: Data) {
+        readDataTo(data: data, maxLength: 0)
     }
 
     // Actually, this method is available as `- (void)readToPattern:(id)arg1 maximumLength:(unsigned int)arg2 completionHandler:(id /* block */)arg3;`
@@ -173,63 +193,73 @@ public class NWTCPSocket: NSObject, RawTCPSocketProtocol {
     // Here is only the most naive version, which may not be the optimal if using with large data blocks.
     /**
      Read data until a specific pattern (including the pattern).
-
+     
      - parameter data: The pattern.
-     - parameter tag:  The tag identifying the data in the callback delegate method.
      - parameter maxLength: The max length of data to scan for the pattern.
      - warning: This should only be called after the last read is finished, i.e., `delegate?.didReadData()` is called.
      */
-    public func readDataToData(data: NSData, withTag tag: Int, maxLength: Int) {
+    public func readDataTo(data: Data, maxLength: Int) {
+        guard !cancelled else {
+            return
+        }
+
         var maxLength = maxLength
         if maxLength == 0 {
             maxLength = Opt.MAXNWTCPScanLength
         }
         scanner = StreamScanner(pattern: data, maximumLength: maxLength)
-        scannerTag = tag
-        readDataWithTag(NWTCPSocket.ScannerReadTag)
+        scanning = true
+        readData()
     }
 
-    private func queueCall(block: ()->()) {
-        dispatch_async(queue, block)
+    private func queueCall(_ block: @escaping () -> Void) {
+        QueueFactory.getQueue().async(execute: block)
     }
 
-    override public func observeValueForKeyPath(keyPath: String?, ofObject object: AnyObject?, change: [String : AnyObject]?, context: UnsafeMutablePointer<Void>) {
+    override public func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
         guard keyPath == "state" else {
             return
         }
 
-        switch connection.state {
-        case .Connected:
+        switch connection!.state {
+        case .connected:
             queueCall {
-                self.delegate?.didConnect(self)
+                self.delegate?.didConnectWith(socket: self)
             }
-        case .Disconnected:
+        case .disconnected:
+            cancelled = true
             cancel()
-        case .Cancelled:
+        case .cancelled:
+            cancelled = true
             queueCall {
                 let delegate = self.delegate
                 self.delegate = nil
-                delegate?.didDisconnect(self)
+                delegate?.didDisconnectWith(socket: self)
             }
         default:
             break
         }
     }
 
-    private func readCallback(data: NSData?, tag: Int) {
+    private func readCallback(data: Data?) {
+        guard !cancelled else {
+            return
+        }
+
         queueCall {
             guard let data = self.consumeReadData(data) else {
                 // remote read is closed, but this is okay, nothing need to be done, if this socket is read again, then error occurs.
                 return
             }
 
-            if tag == NWTCPSocket.ScannerReadTag {
+            if self.scanning {
                 guard let (match, rest) = self.scanner.addAndScan(data) else {
-                    self.readDataWithTag(NWTCPSocket.ScannerReadTag)
+                    self.readData()
                     return
                 }
 
                 self.scanner = nil
+                self.scanning = false
 
                 guard let matchData = match else {
                     // do not find match in the given length, stop now
@@ -237,32 +267,32 @@ public class NWTCPSocket: NSObject, RawTCPSocketProtocol {
                 }
 
                 self.readDataPrefix = rest
-                self.delegate?.didReadData(matchData, withTag: self.scannerTag, from: self)
+                self.delegate?.didRead(data: matchData, from: self)
             } else {
-                self.delegate?.didReadData(data, withTag: tag, from: self)
+                self.delegate?.didRead(data: data, from: self)
             }
         }
     }
 
-    private func sendData(data: NSData, withTag tag: Int) {
+    private func send(data: Data) {
         writePending = true
-        self.connection.write(data) { error in
-            self.writePending = false
-
-            guard error == nil else {
-                DDLogError("NWTCPSocket got an error when writing data: \(error)")
-                self.disconnect()
-                return
-            }
-
+        self.connection!.write(data) { error in
             self.queueCall {
-                self.delegate?.didWriteData(data, withTag: tag, from: self)
+                self.writePending = false
+
+                guard error == nil else {
+                    DDLogError("NWTCPSocket got an error when writing data: \(error)")
+                    self.disconnect()
+                    return
+                }
+
+                self.delegate?.didWrite(data: data, by: self)
+                self.checkStatus()
             }
-            self.checkStatus()
         }
     }
 
-    private func consumeReadData(data: NSData?) -> NSData? {
+    private func consumeReadData(_ data: Data?) -> Data? {
         defer {
             readDataPrefix = nil
         }
@@ -275,13 +305,13 @@ public class NWTCPSocket: NSObject, RawTCPSocketProtocol {
             return readDataPrefix
         }
 
-        let wholeData = NSMutableData(data: readDataPrefix!)
-        wholeData.appendData(data!)
-        return NSData(data: wholeData)
+        var wholeData = readDataPrefix!
+        wholeData.append(data!)
+        return wholeData
     }
 
     private func cancel() {
-        connection.cancel()
+        connection?.cancel()
     }
 
     private func checkStatus() {

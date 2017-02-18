@@ -1,10 +1,10 @@
 import Foundation
 
-/// The rule matches all DNS and connect requests.
-public class AllRule: Rule {
-    private let adapterFactory: AdapterFactory
+/// The rule matches all DNS and connect sessions.
+open class AllRule: Rule {
+    fileprivate let adapterFactory: AdapterFactory
 
-    public override var description: String {
+    open override var description: String {
         return "<AllRule>"
     }
 
@@ -19,30 +19,30 @@ public class AllRule: Rule {
     }
 
     /**
-     Match DNS request to this rule.
+     Match DNS session to this rule.
 
      - parameter session: The DNS session to match.
      - parameter type:    What kind of information is available.
 
      - returns: The result of match.
      */
-    override func matchDNS(session: DNSSession, type: DNSSessionMatchType) -> DNSSessionMatchResult {
+    override open func matchDNS(_ session: DNSSession, type: DNSSessionMatchType) -> DNSSessionMatchResult {
         // only return real IP when we connect to remote directly
         if let _ = adapterFactory as? DirectAdapterFactory {
-            return .Real
+            return .real
         } else {
-            return .Fake
+            return .fake
         }
     }
 
     /**
-     Match connect request to this rule.
+     Match connect session to this rule.
 
-     - parameter request: Connect request to match.
+     - parameter session: connect session to match.
 
      - returns: The configured adapter.
      */
-    override func match(request: ConnectRequest) -> AdapterFactory? {
+    override open func match(_ session: ConnectSession) -> AdapterFactory? {
         return adapterFactory
     }
 }

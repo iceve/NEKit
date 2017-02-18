@@ -1,17 +1,17 @@
 import Foundation
 import CocoaLumberjackSwift
 
-/// The rule matches the request based on the geographical location of the corresponding IP address.
-public class CountryRule: Rule {
-    private let adapterFactory: AdapterFactory
+/// The rule matches the session based on the geographical location of the corresponding IP address.
+open class CountryRule: Rule {
+    fileprivate let adapterFactory: AdapterFactory
 
     /// The ISO code of the country.
-    public let countryCode: String
+    open let countryCode: String
 
-    /// The rule should match the request which matches the country or not.
-    public let match: Bool
+    /// The rule should match the session which matches the country or not.
+    open let match: Bool
 
-    public override var description: String {
+    open override var description: String {
         return "<CountryRule countryCode:\(countryCode) match:\(match)>"
     }
 
@@ -19,7 +19,7 @@ public class CountryRule: Rule {
      Create a new `CountryRule` instance.
 
      - parameter countryCode:    The ISO code of the country.
-     - parameter match:          The rule should match the request which matches the country or not.
+     - parameter match:          The rule should match the session which matches the country or not.
      - parameter adapterFactory: The factory which builds a corresponding adapter when needed.
      */
     public init(countryCode: String, match: Bool, adapterFactory: AdapterFactory) {
@@ -37,30 +37,30 @@ public class CountryRule: Rule {
 
      - returns: The result of match.
      */
-    override func matchDNS(session: DNSSession, type: DNSSessionMatchType) -> DNSSessionMatchResult {
-        guard type == .IP else {
-            return .Unknown
+    override open func matchDNS(_ session: DNSSession, type: DNSSessionMatchType) -> DNSSessionMatchResult {
+        guard type == .ip else {
+            return .unknown
         }
 
         if (session.countryCode != countryCode) != match {
             if let _ = adapterFactory as? DirectAdapterFactory {
-                return .Real
+                return .real
             } else {
-                return .Fake
+                return .fake
             }
         }
-        return .Pass
+        return .pass
     }
 
     /**
-     Match connect request to this rule.
+     Match connect session to this rule.
 
-     - parameter request: Connect request to match.
+     - parameter session: connect session to match.
 
      - returns: The configured adapter if matched, return `nil` if not matched.
      */
-    override func match(request: ConnectRequest) -> AdapterFactory? {
-        if (request.country != countryCode) != match {
+    override open func match(_ session: ConnectSession) -> AdapterFactory? {
+        if (session.country != countryCode) != match {
             return adapterFactory
         }
         return nil

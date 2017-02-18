@@ -1,7 +1,7 @@
 import Foundation
 
 /// Factory building HTTP adapter.
-public class HTTPAdapterFactory: HTTPAuthenticationAdapterFactory {
+open class HTTPAdapterFactory: HTTPAuthenticationAdapterFactory {
     required public init(serverHost: String, serverPort: Int, auth: HTTPAuthentication?) {
         super.init(serverHost: serverHost, serverPort: serverPort, auth: auth)
     }
@@ -9,11 +9,11 @@ public class HTTPAdapterFactory: HTTPAuthenticationAdapterFactory {
     /**
      Get a HTTP adapter.
 
-     - parameter request: The connect request.
+     - parameter session: The connect session.
 
      - returns: The built adapter.
      */
-    override func getAdapter(request: ConnectRequest) -> AdapterSocket {
+    override func getAdapterFor(session: ConnectSession) -> AdapterSocket {
         let adapter = HTTPAdapter(serverHost: serverHost, serverPort: serverPort, auth: auth)
         adapter.socket = RawSocketFactory.getRawSocket()
         return adapter

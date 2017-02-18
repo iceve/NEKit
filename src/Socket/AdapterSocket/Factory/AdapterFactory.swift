@@ -1,15 +1,15 @@
 import Foundation
 
 /// The base class of adapter factory.
-public class AdapterFactory {
+open class AdapterFactory {
     /**
      Build an adapter.
 
-     - parameter request: The connect request.
+     - parameter session: The connect session.
 
      - returns: The built adapter.
      */
-    func getAdapter(request: ConnectRequest) -> AdapterSocket {
+    func getAdapterFor(session: ConnectSession) -> AdapterSocket {
         return getDirectAdapter()
     }
 
