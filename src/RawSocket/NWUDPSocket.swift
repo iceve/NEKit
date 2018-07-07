@@ -52,12 +52,13 @@ public class NWUDPSocket: NSObject {
         
         super.init()
         
-        timer.scheduleRepeating(deadline: DispatchTime.now(), interval: DispatchTimeInterval.seconds(Opt.UDPSocketActiveCheckInterval), leeway: DispatchTimeInterval.seconds(Opt.UDPSocketActiveCheckInterval))
+        timer.schedule(deadline: DispatchTime.now(), repeating: DispatchTimeInterval.seconds(Opt.UDPSocketActiveCheckInterval), leeway: DispatchTimeInterval.seconds(Opt.UDPSocketActiveCheckInterval))
         timer.setEventHandler { [weak self] in
             self?.queueCall {
                 self?.checkStatus()
             }
         }
+        timer.resume()
         
         session.addObserver(self, forKeyPath: #keyPath(NWUDPSession.state), options: [.new], context: nil)
         
@@ -86,13 +87,14 @@ public class NWUDPSocket: NSObject {
      
      - parameter data: The data to send.
      */
-    func write(data: Data) {
+    public func write(data: Data) {
         pendingWriteData.append(data)
         checkWrite()
     }
     
-    func disconnect() {
+    public func disconnect() {
         session.cancel()
+        timer.cancel()
     }
     
     public override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
@@ -105,6 +107,8 @@ public class NWUDPSocket: NSObject {
             queueCall {
                 self.delegate?.didCancel(socket: self)
             }
+        case .ready:
+            checkWrite()
         default:
             break
         }
@@ -112,6 +116,10 @@ public class NWUDPSocket: NSObject {
     
     private func checkWrite() {
         updateActivityTimer()
+        
+        guard session.state == .ready else {
+            return
+        }
         
         guard !writing else {
             return

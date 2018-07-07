@@ -24,7 +24,8 @@ Currently, NEKit supports:
 - Some tools to build IP packets.
 - ...
 
-Check document [here](https://zhuhaow.github.io/NEKit).
+**Part of the following content may be out of date. But the general design philosophy still holds.**
+Check document [here](https://zhuhaow.github.io/NEKit), which should be up to date.
 
 Also, you may be more interested in [Potatso](https://github.com/shadowsocks/Potatso-iOS) if you just need an open source iOS app with GUI supporting shadowsocks.
 
@@ -57,7 +58,7 @@ The only solution is to create a fake IP pool and assign each requested domain w
 I recommend adding this project to your project, which is easier to debug. 
 
 However, you can still use it with Carthage (you'll need Carthage anyway since NEKit uses Carthage) by adding
-```
+```ruby
 github "zhuhaow/NEKit"
 ```
 to you `Cartfile`.
